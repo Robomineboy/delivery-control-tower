@@ -9,6 +9,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from pipeline import run
 import os
+from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse
 
 
 app = FastAPI(title="Delivery Control Tower API")
@@ -23,9 +25,11 @@ app.add_middleware(
 class QueryRequest(BaseModel):
     query: str
 
-@app.get("/")
-async def serve_frontend():
-    return FileResponse("dct_frontend.html")
+@app.api_route("/", methods=["GET", "HEAD"])
+async def serve_frontend(request: Request):
+    if request.method == "HEAD":
+        return HTMLResponse(content="", status_code=200)
+    return FileResponse("index.html")
 
 @app.post("/api/query")
 async def query(req: QueryRequest):
