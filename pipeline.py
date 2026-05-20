@@ -3,11 +3,13 @@ sys.path.append("data")
 sys.path.append("intake")
 sys.path.append("retrieval")
 sys.path.append("risk")
+sys.path.append("critic")
 
 from tickets import get_all_tickets
 from intake_agent import parse_query
 from retrieval_agent import retrieve_filtered
 from risk_agent import analyze_risks, get_overall_severity
+from critic_agent import validate_findings
 
 def run(user_query):
     print(f"Query: '{user_query}'")
@@ -31,11 +33,23 @@ def run(user_query):
     # Step 3: Risk Analysis
     print("Running LLM risk analysis...")
     findings = analyze_risks(tickets)
-    severity = get_overall_severity(findings)
+    print(f"Raw findings: {len(findings)}")
+    print()
 
-    print(f"\nOverall health: {severity}")
-    print(f"Findings: {len(findings)}\n")
-    for f in findings:
+    # Step 4: Critic validation
+    print("Running Critic validation...")
+    validated, flagged = validate_findings(findings, tickets)
+    if flagged:
+        for flag in flagged:
+            print(f"  ⚠ {flag}")
+    print(f"Validated findings: {len(validated)} of {len(findings)} passed")
+    print()
+
+    severity = get_overall_severity(validated)
+    print(f"Overall health: {severity}")
+    print()
+
+    for f in validated:
         print(f"  [{f['severity']}] {f['risk']}")
         print(f"    Confidence: {f['confidence']}")
         print(f"    Evidence:   {f['evidence']}")
@@ -44,9 +58,10 @@ def run(user_query):
 
     return {
         "query": user_query,
-        "intent": parsed['intent'],
+        "intent": parsed["intent"],
         "tickets": tickets,
-        "findings": findings,
+        "findings": validated,
+        "flagged": flagged,
         "overall_severity": severity
     }
 
@@ -54,6 +69,7 @@ if __name__ == "__main__":
     queries = [
         "What are the biggest risks this sprint?",
         "Show me blocked and unassigned tickets",
+        "What is the overall project health?"
     ]
 
     for q in queries:
