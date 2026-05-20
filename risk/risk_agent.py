@@ -1,87 +1,74 @@
-from datetime import date
+import os
+import json
+from groq import Groq
+from dotenv import load_dotenv
+
+load_dotenv()
+
+client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+
+def tickets_to_prompt(tickets):
+    lines = []
+    for t in tickets:
+        lines.append(
+            f"- {t['id']}: {t['title']} | Status: {t['status']} | "
+            f"Priority: {t['priority']} | Assignee: {t['assignee'] or 'Unassigned'} | "
+            f"Type: {t['type']} | Due: {t.get('due_date') or 'None'} | "
+            f"Blocked by: {t['blocked_by'] or 'None'}"
+        )
+    return "\n".join(lines)
 
 def analyze_risks(tickets):
-    findings = []
-    today = date.today().isoformat()
+    ticket_text = tickets_to_prompt(tickets)
 
-    # Pattern 1: Blocked tickets
-    blocked = [t for t in tickets if t["status"] == "Blocked"]
-    if blocked:
-        findings.append({
-            "risk": "Active blockers detected",
-            "severity": "HIGH",
-            "confidence": 0.95,
-            "evidence": [t["id"] for t in blocked],
-            "detail": f"{len(blocked)} ticket(s) are blocked: " +
-                     ", ".join(f"{t['id']} ({t['title']})" for t in blocked)
-        })
+    prompt = f"""You are a senior delivery manager analyzing a software project's Jira board.
 
-    # Pattern 2: Overdue tickets (past due date)
-    overdue = [t for t in tickets if t.get("due_date") and t["due_date"] < today]
-    if overdue:
-        findings.append({
-            "risk": "SLA violations — tickets past due date",
-            "severity": "CRITICAL",
-            "confidence": 0.99,
-            "evidence": [t["id"] for t in overdue],
-            "detail": f"{len(overdue)} ticket(s) past their due date: " +
-                     ", ".join(f"{t['id']} due {t['due_date']}" for t in overdue)
-        })
+Here are the current tickets:
 
-    # Pattern 3: High priority with no owner
-    unowned = [
-        t for t in tickets
-        if t["assignee"] is None and t["priority"] in ("Highest", "High")
-    ]
-    if unowned:
-        findings.append({
-            "risk": "High priority tickets with no owner",
-            "severity": "HIGH",
-            "confidence": 0.98,
-            "evidence": [t["id"] for t in unowned],
-            "detail": f"{len(unowned)} high priority ticket(s) unassigned: " +
-                     ", ".join(f"{t['id']} ({t['title']})" for t in unowned)
-        })
+{ticket_text}
 
-    # Pattern 4: Customer impacting open issues
-    customer_issues = [
-        t for t in tickets
-        if t["customer_impacting"] and t["status"] != "Done"
-    ]
-    if customer_issues:
-        findings.append({
-            "risk": "Open customer-impacting issues",
-            "severity": "CRITICAL",
-            "confidence": 0.97,
-            "evidence": [t["id"] for t in customer_issues],
-            "detail": f"{len(customer_issues)} customer-impacting ticket(s) unresolved: " +
-                     ", ".join(t["id"] for t in customer_issues)
-        })
+Today's date is {__import__('datetime').date.today().isoformat()}.
 
-    # Pattern 5: Highest priority bugs
-    critical_bugs = [
-        t for t in tickets
-        if t["type"] == "Bug" and t["priority"] == "Highest"
-    ]
-    if critical_bugs:
-        findings.append({
-            "risk": "Critical bugs unresolved",
-            "severity": "CRITICAL",
-            "confidence": 0.96,
-            "evidence": [t["id"] for t in critical_bugs],
-            "detail": f"{len(critical_bugs)} critical bug(s) open: " +
-                     ", ".join(f"{t['id']} ({t['title']})" for t in critical_bugs)
-        })
+Analyze these tickets and identify the top risks. For each risk:
+- Give it a title
+- Assign severity: CRITICAL, HIGH, MEDIUM, or LOW
+- Give a confidence score between 0.0 and 1.0
+- List the ticket IDs that are evidence for this risk
+- Write a clear detail explanation of why this is a risk
 
+Return ONLY a JSON array with no extra text. Format:
+[
+  {{
+    "risk": "risk title",
+    "severity": "CRITICAL",
+    "confidence": 0.95,
+    "evidence": ["SS-15"],
+    "detail": "explanation"
+  }}
+]"""
+
+    response = client.chat.completions.create(
+        model="llama-3.1-8b-instant",
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.2,
+    )
+
+    raw = response.choices[0].message.content.strip()
+
+    # Strip markdown code blocks if present
+    if raw.startswith("```"):
+        raw = raw.split("```")[1]
+        if raw.startswith("json"):
+            raw = raw[4:]
+    raw = raw.strip()
+
+    findings = json.loads(raw)
     return findings
 
 def get_overall_severity(findings):
-    if any(f["severity"] == "CRITICAL" for f in findings):
-        return "CRITICAL"
-    if any(f["severity"] == "HIGH" for f in findings):
-        return "HIGH"
-    if any(f["severity"] == "MEDIUM" for f in findings):
-        return "MEDIUM"
+    for level in ["CRITICAL", "HIGH", "MEDIUM", "LOW"]:
+        if any(f["severity"] == level for f in findings):
+            return level
     return "LOW"
 
 if __name__ == "__main__":
@@ -90,8 +77,8 @@ if __name__ == "__main__":
     from tickets import get_all_tickets
 
     tickets = get_all_tickets()
+    print("Running LLM Risk Analysis...\n")
 
-    print("Running Risk Analysis...\n")
     findings = analyze_risks(tickets)
     severity = get_overall_severity(findings)
 
