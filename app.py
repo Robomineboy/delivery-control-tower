@@ -1,16 +1,12 @@
 import sys
 import streamlit as st
 
-sys.path.append("data")
-sys.path.append("intake")
-sys.path.append("retrieval")
-sys.path.append("risk")
-sys.path.append("critic")
+sys.path.append("data")  # for tickets module
 
-from intake_agent import parse_query
-from retrieval_agent import retrieve_filtered
-from risk_agent import analyze_risks, get_overall_severity
-from critic_agent import validate_findings
+from agents.intake_agent import parse_query
+from agents.retrieval_agent import retrieve_filtered
+from agents.risk_agent import analyze_risks, get_overall_severity
+from agents.critic_agent import validate_findings
 
 # ---------------------------------------------------------------------------
 # Page config
