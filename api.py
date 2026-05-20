@@ -10,11 +10,6 @@ from pydantic import BaseModel
 from pipeline import run
 import os
 
-if not os.path.exists("data/tickets.faiss"):
-    print("Building FAISS index...")
-    from data.build_index import build_index
-    build_index()
-
 
 app = FastAPI(title="Delivery Control Tower API")
 

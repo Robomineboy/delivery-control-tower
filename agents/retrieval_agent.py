@@ -1,45 +1,38 @@
-import faiss
-import pickle
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
-from pathlib import Path
-from sentence_transformers import SentenceTransformer
+from tickets import get_all_tickets
 
-_DATA_DIR = Path(__file__).parent.parent / "data"
+_tickets = get_all_tickets()
 
-# Load index and tickets once at startup
-index = faiss.read_index(str(_DATA_DIR / "tickets.faiss"))
-with open(_DATA_DIR / "tickets.pkl", "rb") as f:
-    tickets = pickle.load(f)
+def _ticket_to_text(t):
+    return (
+        f"{t['title']} {t['status']} {t['priority']} "
+        f"{t['assignee'] or 'unassigned'} {t['type']} "
+        f"{' '.join(t['labels'])} "
+        f"{'blocked' if t['blocked_by'] else ''}"
+    )
 
-model = SentenceTransformer("all-MiniLM-L6-v2")
+_texts = [_ticket_to_text(t) for t in _tickets]
+_vectorizer = TfidfVectorizer()
+_matrix = _vectorizer.fit_transform(_texts)
 
 def retrieve(query, top_k=5):
-    query_vec = model.encode([query], normalize_embeddings=True)
-    query_vec = np.array(query_vec, dtype=np.float32)
-
-    scores, indices = index.search(query_vec, top_k)
-    scores = scores[0]
-    indices = indices[0]
-
-    results = []
-    for score, idx in zip(scores, indices):
-        if idx < 0:
-            continue
-        ticket = tickets[idx]
-        results.append({
-            "ticket": ticket,
-            "score": round(float(score), 3)
-        })
-
-    return results
+    query_vec = _vectorizer.transform([query])
+    scores = cosine_similarity(query_vec, _matrix)[0]
+    top_indices = np.argsort(scores)[::-1][:top_k]
+    return [
+        {"ticket": _tickets[i], "score": round(float(scores[i]), 3)}
+        for i in top_indices
+        if scores[i] > 0
+    ]
 
 def retrieve_filtered(query, top_k=5, filters=None):
-    # Get all candidates first
-    candidates = retrieve(query, top_k=len(tickets))
-
+    candidates = retrieve(query, top_k=len(_tickets))
+    
     if not filters:
         return candidates[:top_k]
-
+    
     filtered = []
     for r in candidates:
         t = r["ticket"]
@@ -57,26 +50,9 @@ def retrieve_filtered(query, top_k=5, filters=None):
                     match = False
         if match:
             filtered.append(r)
-
+    
     if not filtered:
-        print(f"  [Retrieval] No results with filters {filters} — falling back to unfiltered")
+        print(f"  [Retrieval] No results with filters {filters} — falling back")
         return candidates[:top_k]
-
+    
     return filtered[:top_k]
-
-if __name__ == "__main__":
-    print("=== Test 1: unassigned high priority ===")
-    results = retrieve_filtered("high priority", filters={"assignee": None})
-    for r in results:
-        t = r["ticket"]
-        print(f"[{r['score']}] {t['id']} — {t['title']}")
-        print(f"         Status: {t['status']} | Priority: {t['priority']} | Assignee: {t['assignee'] or 'Unassigned'}")
-        print()
-
-    print("=== Test 2: sensor firmware bugs ===")
-    results = retrieve("sensor firmware bugs")
-    for r in results:
-        t = r["ticket"]
-        print(f"[{r['score']}] {t['id']} — {t['title']}")
-        print(f"         Status: {t['status']} | Priority: {t['priority']} | Assignee: {t['assignee'] or 'Unassigned'}")
-        print()
