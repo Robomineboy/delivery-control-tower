@@ -1,57 +1,65 @@
+import os
+import json
+from groq import Groq
+from dotenv import load_dotenv
+
+load_dotenv()
+
+client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+
 def parse_query(user_query):
-    query_lower = user_query.lower()
+    prompt = f"""You are parsing a user query about a software project management system.
 
-    # Detect intent
-    if any(w in query_lower for w in ["risk", "risks", "broken", "failing", "problem"]):
-        intent = "risk_analysis"
-    elif any(w in query_lower for w in ["blocked", "blocker", "blocking"]):
-        intent = "blocker_analysis"
-    elif any(w in query_lower for w in ["unassigned", "no owner", "nobody"]):
-        intent = "ownership_gap"
-    elif any(w in query_lower for w in ["summary", "status", "overview", "health"]):
-        intent = "project_summary"
-    else:
-        intent = "general"
+Extract structured information from this query: "{user_query}"
 
-    # Detect filters
-    filters = {}
-    if any(w in query_lower for w in ["blocked", "blocker"]):
-        filters["status"] = "Blocked"
-    if any(w in query_lower for w in ["unassigned", "no owner", "nobody"]):
-        filters["assignee"] = None
+Return ONLY a JSON object with no extra text:
+{{
+    "intent": one of [risk_analysis, blocker_analysis, ownership_gap, person_query, project_summary, general],
+    "search_query": a clean 2-5 word search phrase to find relevant tickets,
+    "filters": object with any of these exact keys if clearly implied:
+        - "status": one of ["Blocked", "In Review", "To Do", "Done"]
+        - "assignee_contains": first name of a person if query is about a specific person
+        - "priority": one of ["Highest", "High", "Medium", "Low"]
+        - "assignee": null if query asks about unassigned tickets
+    "urgency": one of [critical, high, medium, low],
+    "original": the original query
+}}
 
-    # Detect urgency
-    if any(w in query_lower for w in ["urgent", "critical", "asap", "immediately"]):
-        urgency = "critical"
-    elif any(w in query_lower for w in ["high", "important", "priority"]):
-        urgency = "high"
-    else:
-        urgency = "medium"
+Rules:
+- Only include filters if they are clearly and explicitly implied
+- search_query should capture the core topic
+- If query mentions a person's name, set assignee_contains to their name
+- If query asks about unassigned tickets, set assignee to null
+- Never include both assignee and assignee_contains"""
 
-    # Clean query for retrieval
-    stop_words = {"what", "are", "the", "is", "show", "me", "all", "any", "a", "an"}
-    clean_query = " ".join(
-        w for w in query_lower.split() if w not in stop_words
+    response = client.chat.completions.create(
+        model="llama-3.1-8b-instant",
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.0,
     )
 
-    return {
-        "intent": intent,
-        "filters": filters,
-        "query": clean_query,
-        "urgency": urgency,
-        "original": user_query,
-    }
+    raw = response.choices[0].message.content.strip()
+    if raw.startswith("```"):
+        raw = raw.split("```")[1]
+        if raw.startswith("json"):
+            raw = raw[4:]
+    raw = raw.strip()
+
+    parsed = json.loads(raw)
+    return parsed
 
 if __name__ == "__main__":
     test_queries = [
-        "What are the blocked tickets?",
-        "Show me unassigned high priority issues",
-        "What are the biggest risks in sensor firmware?",
-        "Give me a project health summary",
+        "What is Aryan working on?",
+        "What are the biggest risks this sprint?",
+        "Show me all blocked tickets",
+        "Who is overloaded?",
+        "What is the overall project health?",
+        "Show me unassigned high priority tickets",
     ]
 
     for q in test_queries:
         result = parse_query(q)
-        print(f"Input:   {q}")
-        print(f"Output:  {result}")
+        print(f"Input:  {q}")
+        print(f"Output: {result}")
         print()
