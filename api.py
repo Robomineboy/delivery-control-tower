@@ -1,10 +1,11 @@
 import sys
+from urllib.request import Request
 sys.path.append("agents")
 sys.path.append("data")
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from pipeline import run
@@ -27,6 +28,14 @@ app.add_middleware(
 
 class QueryRequest(BaseModel):
     query: str
+
+
+# Fix the root route
+@app.api_route("/", methods=["GET", "HEAD"])
+async def serve_frontend(request: Request):
+    if request.method == "HEAD":
+        return HTMLResponse(content="", status_code=200)
+    return FileResponse("index.html")
 
 @app.get("/")
 async def serve_frontend():
