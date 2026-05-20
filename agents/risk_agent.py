@@ -64,7 +64,6 @@ Return ONLY a JSON array with no extra text. Format:
 
     raw = response.choices[0].message.content.strip()
 
-    # Strip markdown code blocks if present
     if raw.startswith("```"):
         raw = raw.split("```")[1]
         if raw.startswith("json"):

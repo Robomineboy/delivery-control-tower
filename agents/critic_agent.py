@@ -54,7 +54,7 @@ def validate_findings(findings, tickets):
 if __name__ == "__main__":
     import sys
     sys.path.append("../data")
-    sys.path.append("../risk")
+    sys.path.append(".")  # agents/ is a sibling — run from project root
     from tickets import get_all_tickets
     from risk_agent import analyze_risks
 

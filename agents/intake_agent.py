@@ -7,6 +7,22 @@ load_dotenv()
 
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
+def normalize(parsed):
+    # Ensure required keys always exist
+    parsed.setdefault("intent", "general")
+    parsed.setdefault("search_query", parsed.get("original", ""))
+    parsed.setdefault("filters", {})
+    parsed.setdefault("urgency", "medium")
+    parsed.setdefault("original", "")
+
+    # Remove None-valued filters — they break downstream comparisons
+    parsed["filters"] = {
+        k: v for k, v in parsed["filters"].items()
+        if v is not None or k == "assignee"  # assignee=None is valid (means unassigned)
+    }
+
+    return parsed
+
 def parse_query(user_query):
     prompt = f"""You are parsing a user query about a software project management system.
 
@@ -46,7 +62,7 @@ Rules:
     raw = raw.strip()
 
     parsed = json.loads(raw)
-    return parsed
+    return normalize(parsed)
 
 if __name__ == "__main__":
     test_queries = [
@@ -61,5 +77,7 @@ if __name__ == "__main__":
     for q in test_queries:
         result = parse_query(q)
         print(f"Input:  {q}")
-        print(f"Output: {result}")
+        print(f"Intent: {result['intent']} | Urgency: {result['urgency']}")
+        print(f"Filters: {result['filters']}")
+        print(f"Search: {result['search_query']}")
         print()
