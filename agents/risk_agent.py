@@ -2,6 +2,7 @@ import os
 import json
 from groq import Groq
 from dotenv import load_dotenv
+from agents.token_logger import log_tokens
 
 load_dotenv()
 
@@ -61,7 +62,7 @@ Return ONLY a JSON array with no extra text. Format:
         messages=[{"role": "user", "content": prompt}],
         temperature=0.2,
     )
-
+    log_tokens("Risk Agent", response.usage.prompt_tokens, response.usage.completion_tokens)
     raw = response.choices[0].message.content.strip()
 
     if raw.startswith("```"):

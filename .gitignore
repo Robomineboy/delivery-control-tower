@@ -16,8 +16,6 @@ htmlcov/
 .env.*
 !.env.example
 
-#json tokens
-jira_token.json
 
 # Node / Frontend
 node_modules/

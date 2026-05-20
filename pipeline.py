@@ -1,16 +1,19 @@
 import sys
-sys.path.append("data")  # for tickets module
+sys.path.append("data")
 
+from agents.token_logger import reset_tokens, get_token_summary
 from agents.intake_agent import parse_query
 from agents.retrieval_agent import retrieve_filtered
 from agents.risk_agent import analyze_risks, get_overall_severity
-from agents.critic_agent import validate_findings
+from agents.critic_agent import validate_findings, validate_plan
 from agents.summary_agent import summarize
+from agents.planning_agent import generate_plan
 
-RISK_INTENTS = {"risk_analysis", "blocker_analysis", "ownership_gap"}
+RISK_INTENTS = {"risk_analysis", "blocker_analysis", "ownership_gap", "planning"}
 SUMMARY_INTENTS = {"person_query", "project_summary", "general", "timeline"}
 
 def run(user_query):
+    reset_tokens()
     print(f"\nQuery: '{user_query}'")
     print("-" * 60)
 
@@ -23,8 +26,7 @@ def run(user_query):
 
     # Step 2: Retrieval
     filters = parsed["filters"] if parsed["filters"] else None
-    
-    # Project summary gets all tickets, not just top 5
+
     if intent == "project_summary":
         from tickets import get_all_tickets
         tickets = get_all_tickets()
@@ -35,14 +37,21 @@ def run(user_query):
 
     print(f"Retrieved {len(tickets)} tickets")
 
-    # Step 3: Route based on intent
+    # Step 3: Route
     if intent in RISK_INTENTS:
-        # Risk path: Risk Agent → Critic
-        print("Path: Risk Analysis")
+        print("Path: Risk Analysis + Planning")
+
+        # Risk Analysis
         findings = analyze_risks(tickets)
         validated, flagged = validate_findings(findings, tickets)
         severity = get_overall_severity(validated)
-        summary = None
+
+        # Planning
+        raw_plan = generate_plan(user_query, validated, tickets)
+        plan, plan_flags = validate_plan(raw_plan, validated, tickets)
+        flagged.extend(plan_flags)
+
+        print(f"Findings: {len(validated)} | Actions: {len(plan)}")
 
         return {
             "query": user_query,
@@ -53,16 +62,18 @@ def run(user_query):
             "flagged": flagged,
             "severity": severity,
             "summary": None,
+            "plan": plan,
+            "tokens": get_token_summary(),
             "trace": [
                 {"agent": "Intake Agent", "status": "success", "detail": f"Intent: {intent} | Urgency: {parsed['urgency']}"},
                 {"agent": "Retrieval Agent", "status": "success", "detail": f"Retrieved {len(tickets)} tickets"},
                 {"agent": "Risk Analysis Agent", "status": "success", "detail": f"Generated {len(findings)} findings"},
-                {"agent": "Critic Agent", "status": "success", "detail": f"{len(validated)}/{len(findings)} validated | {len(flagged)} flagged"},
+                {"agent": "Critic Agent", "status": "success" if not flagged else "flagged", "detail": f"{len(validated)}/{len(findings)} validated | {len(flagged)} flagged"},
+                {"agent": "Planning Agent", "status": "success", "detail": f"{len(plan)} actions generated"},
             ]
         }
 
     else:
-        # Summary path: direct LLM answer
         print("Path: Summary")
         answer = summarize(user_query, tickets, intent)
         print(f"Answer: {answer[:100]}...")
@@ -76,6 +87,8 @@ def run(user_query):
             "flagged": [],
             "severity": None,
             "summary": answer,
+            "plan": [],
+            "tokens": get_token_summary(),
             "trace": [
                 {"agent": "Intake Agent", "status": "success", "detail": f"Intent: {intent} | Urgency: {parsed['urgency']}"},
                 {"agent": "Retrieval Agent", "status": "success", "detail": f"Retrieved {len(tickets)} tickets"},
@@ -90,6 +103,7 @@ if __name__ == "__main__":
         "What is the overall project health?",
         "Show me all blocked tickets",
         "Who is overloaded?",
+        "Give me the plan for today",
     ]
     for q in queries:
         result = run(q)
@@ -98,4 +112,6 @@ if __name__ == "__main__":
         else:
             for f in result["findings"]:
                 print(f"  [{f['severity']}] {f['risk']}")
+            for a in result["plan"]:
+                print(f"  [{a['priority']}] {a['action']}")
         print("=" * 60)
