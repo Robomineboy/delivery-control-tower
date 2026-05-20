@@ -37,11 +37,6 @@ def retrieve(query, top_k=5):
     return results
 
 def retrieve_filtered(query, top_k=5, filters=None):
-    """
-    filters: dict of field conditions e.g.
-    {"assignee": None, "status": "Blocked"}
-    """
-    # Get more candidates than needed so filtering has room to work
     candidates = retrieve(query, top_k=len(tickets))
 
     if not filters:
@@ -49,10 +44,15 @@ def retrieve_filtered(query, top_k=5, filters=None):
 
     filtered = []
     for r in candidates:
-        t = r["ticket"]
+        t = r['ticket']
         match = all(t.get(k) == v for k, v in filters.items())
         if match:
             filtered.append(r)
+
+    # Fallback — if filters return nothing, use unfiltered results
+    if not filtered:
+        print(f"  [Retrieval] No results with filters {filters} — falling back to unfiltered")
+        return candidates[:top_k]
 
     return filtered[:top_k]
 
