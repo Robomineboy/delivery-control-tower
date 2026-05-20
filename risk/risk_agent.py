@@ -19,6 +19,15 @@ def tickets_to_prompt(tickets):
     return "\n".join(lines)
 
 def analyze_risks(tickets):
+    if not tickets:
+        return [{
+            "risk": "No tickets found",
+            "severity": "LOW",
+            "confidence": 0.0,
+            "evidence": [],
+            "detail": "The Jira board has no tickets, which may indicate a problem with the project setup or data retrieval."
+        }]
+
     ticket_text = tickets_to_prompt(tickets)
 
     prompt = f"""You are a senior delivery manager analyzing a software project's Jira board.
