@@ -2,6 +2,7 @@ import os
 import json
 from groq import Groq
 from dotenv import load_dotenv
+from agents.token_logger import log_tokens
 
 load_dotenv()
 
@@ -59,7 +60,7 @@ Rules:
         messages=[{"role": "user", "content": prompt}],
         temperature=0.1,
     )
-
+    log_tokens("Planning Agent", response.usage.prompt_tokens, response.usage.completion_tokens)
     raw = response.choices[0].message.content.strip()
     if raw.startswith("```"):
         raw = raw.split("```")[1]
