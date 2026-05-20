@@ -1,3 +1,4 @@
+import sys
 import faiss
 import pickle
 import numpy as np
@@ -18,7 +19,9 @@ def ticket_to_text(ticket):
     )
 
 def build_index():
+    print("Fetching tickets from Jira...")
     tickets = get_all_tickets()
+
     texts = [ticket_to_text(t) for t in tickets]
 
     print("Loading embedding model...")
@@ -37,7 +40,7 @@ def build_index():
     with open("tickets.pkl", "wb") as f:
         pickle.dump(tickets, f)
 
-    print(f"Done. {index.ntotal} tickets indexed.")
+    print(f"Done. {index.ntotal} tickets indexed from live Jira board.")
 
 if __name__ == "__main__":
     build_index()
