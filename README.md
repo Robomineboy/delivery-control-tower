@@ -2,7 +2,7 @@
 title: Delivery Control Tower
 emoji: 🗼
 colorFrom: gray
-colorTo: slate
+colorTo: gray
 sdk: docker
 pinned: false
 ---
