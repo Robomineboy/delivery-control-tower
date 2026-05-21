@@ -950,10 +950,26 @@
           placeholder="Ask anything about your project..."
           autocomplete="off"
         />
+        <button onclick="refreshJira()" id="refreshBtn" style="
+            height: 40px;
+            padding: 0 14px;
+            border: 1px solid var(--border2);
+            border-radius: var(--radius);
+            background: var(--surface);
+            color: var(--text2);
+            font-family: var(--sans);
+            font-size: 13px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            white-space: nowrap;
+            transition: all 0.15s;
+        ">↻ Jira</button>
         <button class="run-btn" id="runBtn" onclick="runQuery()">
           Run ↵
         </button>
-      </div>
+    </div>
       <div class="chips">
         <span class="chip" onclick="setQ(this)">What are the biggest risks?</span>
         <span class="chip" onclick="setQ(this)">What is Aryan working on?</span>
@@ -1191,6 +1207,112 @@ function renderTickets(tickets) {
       </div>`).join('');
 }
 
+async function refreshJira() {
+    const btn = document.getElementById('refreshBtn');
+    btn.textContent = '↻ Syncing...';
+    btn.disabled = true;
+    
+    try {
+        const res = await fetch(`${API}/api/refresh`, { method: 'POST' });
+        const data = await res.json();
+        addLog('OK', `Jira synced — ${data.ticket_count} tickets loaded`);
+        btn.textContent = '✓ Synced';
+        setTimeout(() => {
+            btn.textContent = '↻ Jira';
+            btn.disabled = false;
+        }, 2000);
+    } catch (err) {
+        addLog('ERROR', `Refresh failed: ${err.message}`);
+        btn.textContent = '↻ Jira';
+        btn.disabled = false;
+    }
+}
+
+async function approveActions(runId) {
+    const checkboxes = document.querySelectorAll('[id^="action_"]');
+    const approvedIndices = [];
+    checkboxes.forEach((cb, i) => {
+        if (cb.checked) approvedIndices.push(i);
+    });
+
+    if (approvedIndices.length === 0) {
+        addLog('WARN', 'No actions selected for approval');
+        return;
+    }
+
+    const btn = document.querySelector('[onclick^="approveActions"]');
+    btn.textContent = 'Executing...';
+    btn.disabled = true;
+
+    addLog('INFO', `Approving ${approvedIndices.length} action(s)...`);
+
+    try {
+        const res = await fetch(`${API}/api/approve`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ run_id: runId, approved_indices: approvedIndices })
+        });
+
+        const data = await res.json();
+
+        if (data.error) {
+            addLog('ERROR', data.error);
+            return;
+        }
+
+        // Show results
+        let successCount = 0;
+        let failCount = 0;
+
+        data.results.forEach(r => {
+            if (r.result.success) {
+                addLog('OK', r.result.message);
+                successCount++;
+            } else {
+                addLog('ERROR', r.result.message);
+                failCount++;
+            }
+        });
+
+        // Replace approval card with result summary
+        const approvalSection = document.querySelector('.approval-card');
+        if (approvalSection) {
+            approvalSection.innerHTML = `
+                <div style="
+                    padding: 14px 16px;
+                    background: var(--green-light);
+                    border: 1px solid #86efac;
+                    border-radius: 8px;
+                    font-size: 13px;
+                    color: var(--green);
+                    font-weight: 500;
+                ">
+                    ✓ ${successCount} action(s) executed on Jira successfully
+                    ${failCount > 0 ? `<br><span style="color:var(--red)">✗ ${failCount} action(s) failed — check Logs tab</span>` : ''}
+                </div>`;
+        }
+
+        // Auto-refresh Jira after write
+        setTimeout(async () => {
+            addLog('INFO', 'Refreshing Jira data...');
+            await refreshJira();
+        }, 1000);
+
+    } catch (err) {
+        addLog('ERROR', `Approval failed: ${err.message}`);
+        btn.textContent = 'Approve Selected →';
+        btn.disabled = false;
+    }
+}
+
+function rejectActions() {
+    addLog('WARN', 'All pending actions rejected by user');
+    document.getElementById('results').innerHTML += `
+        <div class="flag-card" style="margin-top:8px;">
+            ✗ All actions rejected — no changes made to Jira
+        </div>`;
+}
+
 // History
 function renderHistory() {
   const el = document.getElementById('historyList');
@@ -1305,6 +1427,89 @@ function renderOutput(data) {
           </div>
         </div>`;
     });
+  }
+
+  if (data.pending_actions?.length) {
+      html += `<div class="section-label" style="margin-bottom:10px; margin-top:4px;">
+          ⚠️ Pending Approval — Write Actions
+      </div>`;
+      
+      html += `<div class="approval-card" style="
+          background: #fffbeb;
+          border: 1px solid #fcd34d;
+          border-radius: 8px;
+          padding: 16px;
+          margin-bottom: 16px;
+      ">
+          <div style="font-size:13px; color:#92400e; margin-bottom:12px; font-weight:500;">
+              The following actions will be executed on your Jira board. Review and approve each one.
+          </div>`;
+
+      data.pending_actions.forEach((a, i) => {
+          html += `
+          <div style="
+              background: white;
+              border: 1px solid #fde68a;
+              border-radius: 6px;
+              padding: 12px;
+              margin-bottom: 8px;
+              display: flex;
+              align-items: flex-start;
+              gap: 12px;
+          ">
+              <input type="checkbox" id="action_${i}" checked 
+                  style="margin-top: 3px; width:16px; height:16px; cursor:pointer; accent-color: var(--accent);">
+              <div style="flex:1;">
+                  <div style="font-size:12px; font-weight:600; color:#92400e; margin-bottom:4px; text-transform:uppercase; letter-spacing:0.5px;">
+                      ${a.action_type.replace('_', ' ')}
+                  </div>
+                  <div style="font-size:13px; color:#1c1917; margin-bottom:4px;">
+                      ${a.summary || a.comment || `${a.ticket_id} → ${a.assignee || a.due_date}`}
+                  </div>
+                  <div style="font-size:11px; color:#78716c;">
+                      ${a.reason}
+                  </div>
+                  <div style="font-size:10px; color:#a8a29e; margin-top:2px; font-family: var(--mono);">
+                      Security: ✓ ${a.security_reason}
+                  </div>
+              </div>
+          </div>`;
+      });
+
+      html += `
+          <div style="display:flex; gap:8px; margin-top:12px; justify-content:flex-end;">
+              <button onclick="rejectActions()" style="
+                  padding: 8px 16px;
+                  border: 1px solid var(--border2);
+                  border-radius: 6px;
+                  background: white;
+                  color: var(--text2);
+                  font-family: var(--sans);
+                  font-size: 13px;
+                  cursor: pointer;
+              ">Reject All</button>
+              <button onclick="approveActions('${data.run_id}')" style="
+                  padding: 8px 16px;
+                  border: none;
+                  border-radius: 6px;
+                  background: var(--accent);
+                  color: white;
+                  font-family: var(--sans);
+                  font-size: 13px;
+                  font-weight: 500;
+                  cursor: pointer;
+              ">Approve Selected →</button>
+          </div>
+      </div>`;
+
+      if (data.blocked_actions?.length) {
+          html += `<div style="font-size:12px; color:var(--red); margin-bottom:8px;">
+              🚫 ${data.blocked_actions.length} action(s) blocked by Security Agent
+          </div>`;
+          data.blocked_actions.forEach(a => {
+              html += `<div class="flag-card">🚫 Blocked: ${a.security_reason}</div>`;
+          });
+      }
   }
 
   document.getElementById('results').innerHTML = html;

@@ -33,7 +33,7 @@ def _authorize_browser():
     params = {
         "audience": "api.atlassian.com",
         "client_id": CLIENT_ID,
-        "scope": "read:jira-work offline_access",
+        "scope": "read:jira-work write:jira-work read:jira-users offline_access",
         "redirect_uri": "http://localhost:8080/callback",
         "response_type": "code",
         "prompt": "consent"

@@ -70,6 +70,82 @@ Rules:
 
     return json.loads(raw)
 
+def generate_write_actions(user_query, findings, tickets):
+    """
+    Generates specific Jira write actions from risk findings.
+    Called when user explicitly requests changes.
+    """
+    from agents.writer_agent import TEAM_ACCOUNTS
+    
+    ticket_text = "\n".join([
+        f"- {t['id']}: {t['title']} | Status: {t['status']} | "
+        f"Priority: {t['priority']} | Assignee: {t['assignee'] or 'Unassigned'} | "
+        f"Due: {t.get('due_date') or 'None'}"
+        for t in tickets
+    ])
+
+    findings_text = "\n".join([
+        f"- [{f['severity']}] {f['risk']} — Evidence: {', '.join(f['evidence'])}"
+        for f in findings
+    ])
+
+    team = list(TEAM_ACCOUNTS.keys())
+
+    prompt = f"""You are a Jira assistant executing a specific user request.
+
+The user's EXACT request: "{user_query}"
+
+Current tickets:
+{ticket_text}
+
+Valid team members: {', '.join(team)}
+Valid priorities: Highest, High, Medium, Low
+Today's date: {__import__('datetime').date.today().isoformat()}
+
+IMPORTANT RULES:
+- Execute EXACTLY what the user asked for — nothing more
+- Do NOT add extra actions the user didn't request
+- Do NOT reassign tickets the user didn't mention
+- Do NOT set due dates unless the user asked for it
+- Only reference ticket IDs that exist in the current tickets list
+- Only use team members from the valid list
+
+If the user said "assign SS-10 to Aryan", generate ONE action: update_assignee on SS-10 to Aryan.
+If the user said "create a ticket for X", generate ONE action: create_ticket.
+
+Return ONLY a JSON array with the minimum actions needed to fulfill the request:
+[
+  {{
+    "action_type": "create_ticket|update_assignee|set_due_date|add_comment",
+    "summary": "only for create_ticket",
+    "description": "only for create_ticket", 
+    "priority": "only for create_ticket",
+    "assignee": "exact team member name — only for create_ticket or update_assignee",
+    "ticket_id": "SS-XX — only for update_assignee, set_due_date, add_comment",
+    "due_date": "YYYY-MM-DD — only for set_due_date",
+    "comment": "only for add_comment",
+    "reason": "one sentence explaining why"
+  }}
+]"""
+
+    response = client.chat.completions.create(
+        model="llama-3.1-8b-instant",
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.1,
+    )
+
+    raw = response.choices[0].message.content.strip()
+    if raw.startswith("```"):
+        raw = raw.split("```")[1]
+        if raw.startswith("json"):
+            raw = raw[4:]
+    raw = raw.strip()
+
+    from agents.token_logger import log_tokens
+    log_tokens("Planning Agent", response.usage.prompt_tokens, response.usage.completion_tokens)
+
+    return json.loads(raw)
+
 if __name__ == "__main__":
     import sys
     from pathlib import Path
