@@ -7,8 +7,10 @@ from agents.retrieval_agent import retrieve_filtered
 from agents.risk_agent import analyze_risks, get_overall_severity
 from agents.critic_agent import validate_findings, validate_plan
 from agents.summary_agent import summarize
-from agents.planning_agent import generate_plan
+from agents.planning_agent import generate_plan, generate_write_actions
+from agents.security_agent import validate_all_actions as security_validate
 
+WRITE_INTENTS = {"write_action", "create_ticket", "update_board"}
 RISK_INTENTS = {"risk_analysis", "blocker_analysis", "ownership_gap", "planning"}
 SUMMARY_INTENTS = {"person_query", "project_summary", "general", "timeline"}
 
@@ -38,15 +40,53 @@ def run(user_query):
     print(f"Retrieved {len(tickets)} tickets")
 
     # Step 3: Route
-    if intent in RISK_INTENTS:
-        print("Path: Risk Analysis + Planning")
+    if intent in WRITE_INTENTS:
+        print("Path: Write Action")
 
-        # Risk Analysis
+        # Still do risk analysis for context
         findings = analyze_risks(tickets)
         validated, flagged = validate_findings(findings, tickets)
         severity = get_overall_severity(validated)
 
-        # Planning
+        # Generate write actions
+        raw_actions = generate_write_actions(user_query, validated, tickets)
+        cleared, blocked = security_validate(raw_actions)
+
+        if blocked:
+            flagged.extend([f"Security blocked: {a['security_reason']}" for a in blocked])
+
+        print(f"Write actions: {len(cleared)} cleared | {len(blocked)} blocked")
+
+        return {
+            "query": user_query,
+            "intent": intent,
+            "path": "write",
+            "tickets": tickets,
+            "findings": validated,
+            "flagged": flagged,
+            "severity": severity,
+            "summary": None,
+            "plan": [],
+            "pending_actions": cleared,
+            "blocked_actions": blocked,
+            "tokens": get_token_summary(),
+            "trace": [
+                {"agent": "Intake Agent", "status": "success", "detail": f"Intent: {intent} — write path"},
+                {"agent": "Retrieval Agent", "status": "success", "detail": f"Retrieved {len(tickets)} tickets"},
+                {"agent": "Risk Analysis Agent", "status": "success", "detail": f"{len(findings)} findings for context"},
+                {"agent": "Planning Agent", "status": "success", "detail": f"{len(raw_actions)} actions generated"},
+                {"agent": "Security Agent", "status": "success" if not blocked else "flagged", "detail": f"{len(cleared)} cleared | {len(blocked)} blocked"},
+                {"agent": "Writer Agent", "status": "skipped", "detail": "Awaiting human approval"},
+            ]
+        }
+
+    elif intent in RISK_INTENTS:
+        print("Path: Risk Analysis + Planning")
+
+        findings = analyze_risks(tickets)
+        validated, flagged = validate_findings(findings, tickets)
+        severity = get_overall_severity(validated)
+
         raw_plan = generate_plan(user_query, validated, tickets)
         plan, plan_flags = validate_plan(raw_plan, validated, tickets)
         flagged.extend(plan_flags)
@@ -63,6 +103,8 @@ def run(user_query):
             "severity": severity,
             "summary": None,
             "plan": plan,
+            "pending_actions": [],
+            "blocked_actions": [],
             "tokens": get_token_summary(),
             "trace": [
                 {"agent": "Intake Agent", "status": "success", "detail": f"Intent: {intent} | Urgency: {parsed['urgency']}"},
@@ -88,6 +130,8 @@ def run(user_query):
             "severity": None,
             "summary": answer,
             "plan": [],
+            "pending_actions": [],
+            "blocked_actions": [],
             "tokens": get_token_summary(),
             "trace": [
                 {"agent": "Intake Agent", "status": "success", "detail": f"Intent: {intent} | Urgency: {parsed['urgency']}"},
@@ -104,11 +148,16 @@ if __name__ == "__main__":
         "Show me all blocked tickets",
         "Who is overloaded?",
         "Give me the plan for today",
+        "Reassign SS-10 to Aryan Ghosh",
     ]
     for q in queries:
         result = run(q)
         if result["path"] == "summary":
             print(f"\nAnswer: {result['summary']}")
+        elif result["path"] == "write":
+            print(f"\nPending actions: {len(result['pending_actions'])}")
+            for a in result["pending_actions"]:
+                print(f"  {a['action_type']}: {a}")
         else:
             for f in result["findings"]:
                 print(f"  [{f['severity']}] {f['risk']}")
