@@ -47,6 +47,7 @@ Rules:
 - search_query should capture the core topic
 - If query mentions a person's name, set assignee_contains to their name
 - If query asks about unassigned tickets, set assignee to null
+- If the query asks about the whole team, all members, or who is working on the project, set intent to "project_summary" — this fetches all tickets instead of top-5
 - planning: user wants action items, what to do next, plan for today/week, priorities
 - Never include both assignee and assignee_contains"""
 

@@ -27,7 +27,7 @@ def run(user_query):
     # Step 2: Retrieval
     filters = parsed["filters"] if parsed["filters"] else None
 
-    if intent == "project_summary":
+    if intent in ("project_summary", "ownership_gap") or "overload" in parsed["search_query"].lower():
         from tickets import get_all_tickets
         tickets = get_all_tickets()
         results = [{"ticket": t, "score": 1.0} for t in tickets]
