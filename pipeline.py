@@ -9,6 +9,7 @@ from agents.critic_agent import validate_findings, validate_plan
 from agents.summary_agent import summarize
 from agents.planning_agent import generate_plan, generate_write_actions
 from agents.security_agent import validate_all_actions as security_validate
+from data.tickets import get_all_tickets
 
 WRITE_INTENTS = {"write_action", "create_ticket", "update_board"}
 RISK_INTENTS = {"risk_analysis", "blocker_analysis", "ownership_gap", "planning"}
@@ -30,7 +31,6 @@ def run(user_query):
     filters = parsed["filters"] if parsed["filters"] else None
 
     if intent in ("project_summary", "ownership_gap") or "overload" in parsed["search_query"].lower():
-        from tickets import get_all_tickets
         tickets = get_all_tickets()
         results = [{"ticket": t, "score": 1.0} for t in tickets]
     else:
