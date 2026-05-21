@@ -31,7 +31,7 @@ Extract structured information from this query: "{user_query}"
 
 Return ONLY a JSON object with no extra text:
 {{
-    "intent": one of [risk_analysis, blocker_analysis, ownership_gap, person_query, project_summary, planning, general],
+    "intent": one of [risk_analysis, blocker_analysis, ownership_gap, person_query, project_summary, write_action,planning, general],
     "search_query": a clean 2-5 word search phrase to find relevant tickets,
     "filters": object with any of these exact keys if clearly implied:
         - "status": one of ["Blocked", "In Review", "To Do", "Done"]
@@ -47,6 +47,8 @@ Rules:
 - search_query should capture the core topic
 - If query mentions a person's name, set assignee_contains to their name
 - If query asks about unassigned tickets, set assignee to null
+- write_action: user wants to CREATE, ASSIGN, UPDATE or CHANGE something on the board — 
+  keywords: assign, create, add, set due date, change, update, move, order
 - planning: user wants action items, what to do next, plan for today/week, priorities
 - Never include both assignee and assignee_contains"""
 
